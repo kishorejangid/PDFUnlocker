@@ -13,6 +13,7 @@ namespace PDFUnlocker
         static string password;
         static void Main(string[] args)
         {
+            Console.Title = "PDF Unlocker";
             //Check, if we have any parameters passed.
             if(args.Length == 0)
             {
