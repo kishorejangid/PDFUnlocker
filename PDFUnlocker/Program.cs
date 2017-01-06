@@ -14,8 +14,10 @@ namespace PDFUnlocker
         static void Main(string[] args)
         {
             Console.Title = "PDF Unlocker";
+            AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionTrapper;
+
             //Check, if we have any parameters passed.
-            if(args.Length == 0)
+            if (args.Length == 0)
             {
                 Console.WriteLine("Enter Input file path: ");
                 inputFile = Console.ReadLine();
@@ -134,6 +136,14 @@ namespace PDFUnlocker
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine(info);
             Console.ResetColor();
+        }
+
+        static void UnhandledExceptionTrapper(object sender, UnhandledExceptionEventArgs e)
+        {
+            Error(e.ExceptionObject.ToString());
+            Console.WriteLine("Press Enter to continue");
+            Console.ReadLine();
+            Environment.Exit(1);
         }
     }
 }
