@@ -14,6 +14,14 @@ namespace PDFUnlocker
         static void Main(string[] args)
         {
             Console.Title = "PDF Unlocker";
+
+            Info(@"*********************************************************
+*** This app unprotects any PDF file with a password. ***
+***           Developed by: Kishore Jangid            ***
+***              This app is free to use              ***
+*********************************************************");
+            Console.WriteLine();
+
             AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionTrapper;
 
             //Check, if we have any parameters passed.
@@ -73,7 +81,7 @@ namespace PDFUnlocker
                 outputDoc.Save(outputFile);                
                 maindoc.Dispose();
                 outputDoc.Dispose();               
-                Info("PDF file unlocked.");
+                Success("PDF file unlocked.");
             }catch(Exception e)
             {
                 Error(e.Message);
@@ -131,10 +139,17 @@ namespace PDFUnlocker
             Console.ResetColor();
         }
 
-        static void Info(string info)
+        static void Info(string msg)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine(msg);
+            Console.ResetColor();
+        }
+
+        static void Success(string msg)
         {
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine(info);
+            Console.WriteLine(msg);
             Console.ResetColor();
         }
 
