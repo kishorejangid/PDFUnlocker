@@ -2,6 +2,7 @@
 using PdfSharp.Pdf.IO;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 
@@ -9,80 +10,175 @@ namespace PDFUnlocker
 {
     class Program
     {
-        static string inputFile;
-        static string password;
+        static List<string> wrongPasswordFiles = new List<string>();
         static void Main(string[] args)
         {
+            string inputPath = null;
+            string password = null;            
             Console.Title = "PDF Unlocker";
 
-            Info(@"*********************************************************
-*** This app unprotects any PDF file with a password. ***
-***           Developed by: Kishore Jangid            ***
-***              This app is free to use              ***
-*********************************************************");
-            Console.WriteLine();
+            WriteBranding();            
 
             AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionTrapper;
 
             //Check, if we have any parameters passed.
-            if (args.Length == 0)
+            if(args.Length == 1)
             {
-                Console.WriteLine("Enter Input file path: ");
-                inputFile = Console.ReadLine();
-            }else if(args.Length == 1)
-            {
-                inputFile = args[0];
+                inputPath = args[0];
             }else if(args.Length == 2)
             {
-                inputFile = args[0];
+                inputPath = args[0];
                 password = args[1];
             }
 
-            if (File.Exists(inputFile)){                
-                if(Path.GetExtension(inputFile) == ".pdf")
+            while (true)
+            {
+                try
                 {
-                    if (string.IsNullOrEmpty(password))
+                    if (string.IsNullOrEmpty(inputPath))
                     {
-                        Console.WriteLine("Enter PDF password:");
-                        password = ReadPassword('*');
+                        Console.WriteLine(new String('-',Console.BufferWidth-1));
+                        Console.Write("Enter Input file or folder path: ");
+                        inputPath = Console.ReadLine();
+
+                        if (string.IsNullOrEmpty(inputPath))
+                        {
+                            Error("Path cannot be empty. Type \"exit\" to exit application.");
+                            continue;
+                        }
+                        else if (inputPath == "exit")
+                        {
+                            break;                            
+                        }
                     }
 
-                    string newFileName = Path.Combine(Path.GetDirectoryName(inputFile),
-                        Path.GetFileNameWithoutExtension(inputFile) + "_unlocked.pdf");
-                    GeneratePdf(inputFile, password, newFileName);
-                }
-                else
+
+                    FileAttributes attr = File.GetAttributes(inputPath);
+                    if (attr.HasFlag(FileAttributes.Directory))
+                    {
+                        if (Directory.Exists(inputPath))
+                        {
+                            var files = GetFiles(inputPath, d => !d.Contains("unlocked"), "*.pdf");
+                            if (files.Count() > 0)
+                            {
+                                if (string.IsNullOrEmpty(password))
+                                {
+                                    password = GetPassword();
+                                }
+
+                                foreach (string file in files)
+                                {                                    
+                                    GeneratePdf(file, password, GetOutputFile(file));
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Error($"Invalid path - {inputPath}");
+                        }
+                    }
+                    else
+                    {
+                        if (File.Exists(inputPath))
+                        {
+                            if (string.IsNullOrEmpty(password))
+                            {
+                                password = GetPassword();
+                            }
+                            
+                            GeneratePdf(inputPath, password, GetOutputFile(inputPath));
+                        }
+                        else
+                        {
+                            Error($"Invalid path - {inputPath}");
+                        }
+                    }
+                   
+                    if(wrongPasswordFiles.Count > 0)
+                    {
+                        Console.Write($"There are {wrongPasswordFiles.Count} files with wrong password, do you want to enter password for each file manually.?Enter y/n: ");
+                        var feedback = Console.ReadLine();
+                        if(!string.IsNullOrEmpty(feedback) && feedback.ToLower() == "y")
+                        {
+                            foreach(var file in wrongPasswordFiles)
+                            {
+                                Console.Write($"Enter password for {file}:");
+                                password = ReadPassword('*');
+
+                                GeneratePdf(file, password, GetOutputFile(file));
+                            }
+                        }
+                    }
+                    //Reset wrong password list.
+                    wrongPasswordFiles = new List<string>();
+                }catch(Exception e)
                 {
-                    Error("Only PDF files accepted.");
-                }
-            }else
+                    Error(e.Message);
+                }                              
+
+                inputPath = null;
+                password = null;
+            }            
+        }
+
+        public static IEnumerable<string> GetFiles(string rootDirectory,Func<string, bool> directoryFilter,string filePattern)
+        {
+            foreach (string matchedFile in Directory.GetFiles(rootDirectory, filePattern, SearchOption.TopDirectoryOnly))
             {
-                Error("File doesn't exists or invalid path.");
+                yield return matchedFile;
             }
-            Console.ReadLine();
+
+            var matchedDirectories = Directory.GetDirectories(rootDirectory, "*.*", SearchOption.TopDirectoryOnly)
+                .Where(directoryFilter);
+
+            foreach (var dir in matchedDirectories)
+            {
+                foreach (var file in GetFiles(dir, directoryFilter, filePattern))
+                {
+                    yield return file;
+                }
+            }
+        }
+
+        static private string GetOutputFile(string inputFile)
+        {
+            var unlockedDir = Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(inputFile), "unlocked"));
+            return Path.Combine(unlockedDir.FullName, Path.GetFileName(inputFile));
+        }
+
+        static private string GetPassword()
+        {
+            Console.Write("Enter PDF password:");
+            return ReadPassword('*');        
         }
 
         static private void GeneratePdf(string inputFile,string password,string outputFile)
         {
             try
             {
-                PdfDocument maindoc = PdfReader.Open(inputFile, password, PdfDocumentOpenMode.Import);
-                //Use the property HasOwnerPermissions to decide whether the used password
-                // was the user or the owner password.   
-                bool hasOwnerAccess = maindoc.SecuritySettings.HasOwnerPermissions;
-
-                PdfDocument outputDoc = new PdfDocument();
-
-                foreach (PdfPage page in maindoc.Pages)
+                using (PdfDocument maindoc = PdfReader.Open(inputFile, password, PdfDocumentOpenMode.Import))
                 {
-                    outputDoc.AddPage(page);
+                    using (PdfDocument outputDoc = new PdfDocument())
+                    {
+                        foreach (PdfPage page in maindoc.Pages)
+                        {
+                            outputDoc.AddPage(page);
+                        }
+
+                        outputDoc.Save(outputFile);
+                    }                    
                 }
 
-                outputDoc.Save(outputFile);                
-                maindoc.Dispose();
-                outputDoc.Dispose();               
-                Success("PDF file unlocked.");
-            }catch(Exception e)
+                Success($"PDF file \"{inputFile}\" unlocked.");
+            }catch(PdfReaderException pre)
+            {
+                Error(pre.Message);
+                if(pre.Message == "The specified password is invalid.")
+                {
+                    wrongPasswordFiles.Add(inputFile);
+                }
+            }
+            catch (Exception e)
             {
                 Error(e.Message);
             }
@@ -155,10 +251,28 @@ namespace PDFUnlocker
 
         static void UnhandledExceptionTrapper(object sender, UnhandledExceptionEventArgs e)
         {
-            Error(e.ExceptionObject.ToString());
-            Console.WriteLine("Press Enter to continue");
+            Error(((Exception)e.ExceptionObject).Message);            
             Console.ReadLine();
             Environment.Exit(1);
+        }
+
+        static void WriteBranding()
+        {
+            Info(new string('*', Console.BufferWidth-1));
+
+            var line1 = "This app unprotects any PDF file with a password.";
+            var line1stars = (Console.BufferWidth-1 - line1.Length - 20) / 2;
+            Info($"{new string('*', 10)}{new string(' ', line1stars)}{line1}{new string(' ', (Console.BufferWidth-1-20-line1.Length-line1stars))}{new string('*', 10)}");
+
+            var line2 = "Developed by: Kishore Jangid";
+            var line2stars = (Console.BufferWidth -1 - line2.Length - 20) / 2 ;
+            Info($"{new string('*', 10)}{new string(' ', line2stars)}{line2}{new string(' ', (Console.BufferWidth - 1 - 20 - line2.Length - line2stars))}{new string('*', 10)}");
+
+            var line3 = "This app is free to use";
+            var line3stars = (Console.BufferWidth - 1 - line3.Length - 20) / 2;
+            Info($"{new string('*', 10)}{new string(' ', line3stars)}{line3}{new string(' ', (Console.BufferWidth - 1 - 20 - line3.Length - line3stars))}{new string('*', 10)}");
+
+            Info(new string('*', Console.BufferWidth - 1));            
         }
     }
 }
